@@ -1,14 +1,12 @@
-use std::{fmt::Display, str::FromStr};
-
 use crate::error::MyError;
-
-pub type Result<T, E = MyError> = core::result::Result<T, E>;
+use crate::Result;
+use std::{fmt::Display, str::FromStr};
 
 /// A validated PNG chunk type. See the PNG spec for more details.
 /// http://www.libpng.org/pub/png/spec/1.2/PNG-Structure.html
-#[derive(Debug, PartialEq, Eq)]
-struct ChunkType {
-    item: Vec<u8>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChunkType {
+    pub item: Vec<u8>,
 }
 
 #[allow(dead_code)]
