@@ -2,7 +2,7 @@ use crate::chunk_type::ChunkType;
 use crate::error::MyError;
 use crate::Result;
 use crc::{Crc, CRC_32_ISO_HDLC};
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 /// A validated PNG chunk. See the PNG Spec for more details
 /// http://www.libpng.org/pub/png/spec/1.2/PNG-Structure.html
@@ -10,24 +10,18 @@ use std::fmt::Display;
 pub struct Chunk {
     length: u32,
     chunk_type: ChunkType,
-    data: Vec<u8>,
+    data: Rc<Vec<u8>>,
     crc: u32,
 }
 
 #[allow(dead_code)]
 impl Chunk {
     pub fn new(chunk_type: ChunkType, data: Vec<u8>) -> Chunk {
-        let crc_data = chunk_type
-            .item
-            .clone()
-            .into_iter()
-            .chain(data.clone().into_iter())
-            .collect::<Vec<u8>>();
         Chunk {
             length: data.len() as u32,
-            chunk_type,
-            data,
-            crc: generate_crc(crc_data.as_ref()),
+            chunk_type: chunk_type.clone(),
+            data: Rc::new(data.clone()),
+            crc: generate_crc(chunk_type, data),
         }
     }
 
@@ -54,7 +48,10 @@ impl Chunk {
     /// Returns the data stored in this chunk as a `String`. This function will return an error
     /// if the stored data is not valid UTF-8.
     pub fn data_as_string(&self) -> Result<String> {
-        todo!()
+        match String::from_utf8(self.data.clone().as_ref().to_owned()) {
+            Ok(val) => Ok(val),
+            Err(_) => Err(MyError::InvalidUTF8Char),
+        }
     }
 
     /// Returns this chunk as a byte sequences described by the PNG spec.
@@ -64,13 +61,27 @@ impl Chunk {
     /// 3. The data itself *(`length` bytes)*
     /// 4. The CRC of the chunk type and data *(4 bytes)*
     pub fn as_bytes(&self) -> Vec<u8> {
-        todo!()
+        let length_bytes: [u8; 4] = self.length.to_be_bytes();
+        let chunk_type = &self.chunk_type.item;
+        let data = self.data.clone();
+        let crc: [u8; 4] = self.crc.to_be_bytes();
+        length_bytes
+            .into_iter()
+            .chain(chunk_type.iter().copied())
+            .chain(data.as_ref().iter().copied())
+            .chain(crc.into_iter())
+            .collect()
     }
 }
 
-fn generate_crc(bytes: &[u8]) -> u32 {
+fn generate_crc(chunk_type: ChunkType, data: Vec<u8>) -> u32 {
+    let data = chunk_type
+        .item
+        .into_iter()
+        .chain(data.into_iter())
+        .collect::<Vec<u8>>();
     let crc_data = Crc::<u32>::new(&CRC_32_ISO_HDLC);
-    crc_data.checksum(bytes)
+    crc_data.checksum(data.as_ref())
 }
 
 impl TryFrom<&[u8]> for Chunk {
@@ -78,17 +89,28 @@ impl TryFrom<&[u8]> for Chunk {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         let vec_val = value.to_vec();
-        let length = u32::from_be_bytes(vec_val.get(0..5).unwrap().try_into().unwrap());
-        let chunk_type_num = vec_val.get(5..10).unwrap();
+        let length = u32::from_be_bytes(vec_val.get(0..4).unwrap().try_into().unwrap());
+        let chunk_type_num = vec_val.get(4..8).unwrap();
         let item = chunk_type_num.to_owned();
-        let data_num = vec_val.get(10..length as usize).unwrap().to_vec();
-        let crc = u32::from_be_bytes(vec_val.get(length as usize..).unwrap().try_into().unwrap());
-        Ok(Chunk {
-            length,
-            chunk_type: ChunkType { item },
-            data: data_num,
-            crc,
-        })
+        let data_num = vec_val.get(8..8 + length as usize).unwrap().to_vec();
+        let crc = u32::from_be_bytes(
+            vec_val
+                .get(8 + length as usize..)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+        let generate_crc = generate_crc(ChunkType { item: item.clone() }, data_num.clone());
+        if generate_crc != crc {
+            Err(MyError::InvalidCscValue)
+        } else {
+            Ok(Chunk {
+                length,
+                chunk_type: ChunkType { item },
+                data: Rc::new(data_num),
+                crc,
+            })
+        }
     }
 }
 
