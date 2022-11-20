@@ -35,14 +35,21 @@ impl Png {
     }
 
     /// Appends a chunk to the end of this `Png` file's `Chunk` list.
-    pub fn append_chunk(&mut self, _chunk: Chunk) {
-        todo!()
+    pub fn append_chunk(&mut self, chunk: Chunk) {
+        let chunks = self.chunks.as_mut().unwrap();
+        chunks.push(chunk);
     }
 
     /// Searches for a `Chunk` with the specified `chunk_type` and removes the first
     /// matching `Chunk` from this `Png` list of chunks.
-    pub fn remove_chunk(&mut self, _chunk_type: &str) -> Result<Chunk> {
-        todo!()
+    pub fn remove_chunk(&mut self, chunk_type: &str) -> Result<Chunk> {
+        let chunk = self.chunk_by_type(chunk_type).unwrap();
+        self.chunks
+            .clone()
+            .unwrap()
+            .retain(|chunk| *chunk.chunk_type() != ChunkType::from_str(chunk_type).unwrap());
+        println!("chumk is {:?}", self.chunks);
+        Ok(chunk.to_owned())
     }
 
     /// The header of this PNG.
@@ -57,8 +64,12 @@ impl Png {
 
     /// Searches for a `Chunk` with the specified `chunk_type` and returns the first
     /// matching `Chunk` from this `Png`.
-    pub fn chunk_by_type(&self, _chunk_type: &str) -> Option<&Chunk> {
-        todo!()
+    pub fn chunk_by_type(&self, chunk_type: &str) -> Option<&Chunk> {
+        self.chunks
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|chunk| *chunk.chunk_type() == ChunkType::from_str(chunk_type).unwrap())
     }
 
     /// Returns this `Png` as a byte sequence.
