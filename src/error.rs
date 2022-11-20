@@ -9,4 +9,6 @@ pub enum MyError {
     InvalidUTF8Char,
     #[error("InvalidCscValue")]
     InvalidCscValue,
+    #[error("InvalidPngHearder")]
+    InvalidPngHearder,
 }
