@@ -291,7 +291,9 @@ mod tests {
     fn test_remove_chunk() {
         let mut png = testing_png();
         png.append_chunk(chunk_from_strings("TeSt", "Message").unwrap());
+        println!("add append: {:?}", png);
         png.remove_chunk("TeSt").unwrap();
+        println!("remove append: {:?}", png);
         let chunk = png.chunk_by_type("TeSt");
         assert!(chunk.is_none());
     }
