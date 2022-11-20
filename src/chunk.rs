@@ -1,6 +1,8 @@
 use crate::chunk_type::ChunkType;
 use crate::error::MyError;
-use crate::Result;
+use anyhow::anyhow;
+use anyhow::Error;
+use anyhow::Result;
 use crc::{Crc, CRC_32_ISO_HDLC};
 use std::{fmt::Display, rc::Rc};
 
@@ -17,11 +19,12 @@ pub struct Chunk {
 #[allow(dead_code)]
 impl Chunk {
     pub fn new(chunk_type: ChunkType, data: Vec<u8>) -> Chunk {
+        let data = Rc::new(data);
         Chunk {
             length: data.len() as u32,
             chunk_type: chunk_type.clone(),
-            data: Rc::new(data.clone()),
-            crc: generate_crc(chunk_type, data),
+            data: data.clone(),
+            crc: generate_crc(chunk_type, data.clone()),
         }
     }
 
@@ -50,7 +53,7 @@ impl Chunk {
     pub fn data_as_string(&self) -> Result<String> {
         match String::from_utf8(self.data.clone().as_ref().to_owned()) {
             Ok(val) => Ok(val),
-            Err(_) => Err(MyError::InvalidUTF8Char),
+            Err(_) => Err(anyhow!(MyError::InvalidUTF8Char)),
         }
     }
 
@@ -74,20 +77,20 @@ impl Chunk {
     }
 }
 
-fn generate_crc(chunk_type: ChunkType, data: Vec<u8>) -> u32 {
+fn generate_crc(chunk_type: ChunkType, data: Rc<Vec<u8>>) -> u32 {
     let data = chunk_type
         .item
         .into_iter()
-        .chain(data.into_iter())
+        .chain(data.as_ref().iter().copied())
         .collect::<Vec<u8>>();
     let crc_data = Crc::<u32>::new(&CRC_32_ISO_HDLC);
     crc_data.checksum(data.as_ref())
 }
 
 impl TryFrom<&[u8]> for Chunk {
-    type Error = MyError;
+    type Error = Error;
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(value: &[u8]) -> Result<Self> {
         let vec_val = value.to_vec();
         let length = u32::from_be_bytes(vec_val.get(0..4).unwrap().try_into().unwrap());
         let chunk_type_num = vec_val.get(4..8).unwrap();
@@ -100,14 +103,15 @@ impl TryFrom<&[u8]> for Chunk {
                 .try_into()
                 .unwrap(),
         );
-        let generate_crc = generate_crc(ChunkType { item: item.clone() }, data_num.clone());
+        let data = Rc::new(data_num);
+        let generate_crc = generate_crc(ChunkType { item: item.clone() }, data.clone());
         if generate_crc != crc {
-            Err(MyError::InvalidCscValue)
+            Err(anyhow!(MyError::InvalidCscValue))
         } else {
             Ok(Chunk {
                 length,
                 chunk_type: ChunkType { item },
-                data: Rc::new(data_num),
+                data,
                 crc,
             })
         }

@@ -1,5 +1,7 @@
 use crate::error::MyError;
-use crate::Result;
+use anyhow::anyhow;
+use anyhow::Error;
+use anyhow::Result;
 use std::{fmt::Display, str::FromStr};
 
 /// A validated PNG chunk type. See the PNG spec for more details.
@@ -50,9 +52,9 @@ impl ChunkType {
 }
 
 impl TryFrom<[u8; 4]> for ChunkType {
-    type Error = ();
+    type Error = Error;
 
-    fn try_from(value: [u8; 4]) -> Result<Self, Self::Error> {
+    fn try_from(value: [u8; 4]) -> Result<Self> {
         let mut item = Vec::with_capacity(4);
         for var in value {
             item.push(var);
@@ -62,12 +64,12 @@ impl TryFrom<[u8; 4]> for ChunkType {
 }
 
 impl FromStr for ChunkType {
-    type Err = MyError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
         let is_not_char = s.as_bytes().iter().any(|c| !c.is_ascii_alphabetic());
         if is_not_char {
-            Err(MyError::InvalidChar)
+            Err(anyhow!(MyError::InvalidChar))
         } else {
             let item = Vec::from(s.as_bytes());
             Ok(ChunkType { item })
