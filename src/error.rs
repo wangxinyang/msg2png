@@ -11,4 +11,10 @@ pub enum MyError {
     InvalidCscValue,
     #[error("InvalidPngHearder")]
     InvalidPngHearder,
+    #[error("InvalidFilePath")]
+    InvalidFilePath,
+    #[error("InvalidFilePathIsDir")]
+    InvalidFilePathIsDir,
+    #[error("NotFoundChunkType")]
+    NotFoundChunkType,
 }

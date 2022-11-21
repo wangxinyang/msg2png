@@ -6,9 +6,7 @@ use anyhow::Error;
 use anyhow::Ok;
 use anyhow::Result;
 use std::fmt;
-use std::fs::File;
-use std::io::BufRead;
-use std::io::BufReader;
+use std::fs;
 use std::ops::Deref;
 use std::path::Path;
 use std::str::FromStr;
@@ -16,7 +14,7 @@ use std::str::FromStr;
 #[derive(Debug)]
 pub struct Png {
     header: [u8; 8],
-    chunks: Vec<Chunk>,
+    pub chunks: Vec<Chunk>,
 }
 
 #[allow(dead_code)]
@@ -35,16 +33,9 @@ impl Png {
 
     /// Creates a `Png` from a file path
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let mut file_iter = reader.lines();
-        let chunk_type = file_iter.next().unwrap()?;
-        let data = file_iter.next().unwrap()?;
-        let chunks = vec![chunk_from_strings(&chunk_type, &data).unwrap()];
-        Ok(Png {
-            header: Png::STANDARD_HEADER,
-            chunks,
-        })
+        let f = fs::read(path)?;
+        let png = Png::try_from(&f[..])?;
+        Ok(png)
     }
 
     /// Appends a chunk to the end of this `Png` file's `Chunk` list.
@@ -56,25 +47,21 @@ impl Png {
     /// Searches for a `Chunk` with the specified `chunk_type` and removes the first
     /// matching `Chunk` from this `Png` list of chunks.
 
-    pub fn remove_chunk(&mut self, chunk_type: &str) -> Result<()> {
-        let remove_chunk_type = ChunkType::from_str(chunk_type).unwrap();
-        // let remove_chunk = self
-        //     .chunks
-        //     .into_iter()
-        //     .find(|chunk| *chunk.chunk_type() != ChunkType::from_str(chunk_type).unwrap())
-        //     .unwrap();
-        // let left_chunks: Vec<Chunk> = self
-        //     .chunks
-        //     .into_iter()
-        //     .filter(|chunk| *chunk.chunk_type() != ChunkType::from_str(chunk_type).unwrap())
-        //     .collect();
-        // let remove_chunk_type = ChunkType::from_str(chunk_type).unwrap();
-        let _ = &self
-            .chunks
-            .retain(|chunk| *chunk.chunk_type() != remove_chunk_type);
+    pub fn remove_chunk(&mut self, chunk_type: &str) -> Result<Chunk> {
+        let remove_type = ChunkType::from_str(chunk_type)?;
 
-        // Ok(remove_chunk)
-        Ok(())
+        let mut flag = false;
+        let mut remove_index = 0;
+        for i in 0..self.chunks.len() {
+            if *self.chunks[i].chunk_type() == remove_type {
+                flag = true;
+                remove_index = i;
+            }
+        }
+        match flag {
+            true => Ok(self.chunks.remove(remove_index)),
+            false => Err(anyhow!(MyError::NotFoundChunkType)),
+        }
     }
 
     /// The header of this PNG.
@@ -108,6 +95,16 @@ impl Png {
             .into_iter()
             .chain(chunk_bytes)
             .collect::<Vec<u8>>()
+    }
+
+    pub fn data_string_by_type(&self, chunk_type: &str) -> Option<String> {
+        let chunk_data = self.chunk_by_type(chunk_type);
+        if let Some(data) = chunk_data {
+            let a = data.data_as_string().unwrap();
+            Some(a)
+        } else {
+            None
+        }
     }
 }
 
@@ -151,7 +148,7 @@ fn get_chunk_by_range(bytes: &[u8], length: u32, start: usize) -> Result<Chunk> 
     Ok(Chunk::new(chunk_type, data))
 }
 
-fn chunk_from_strings(chunk_type: &str, data: &str) -> Result<Chunk> {
+pub fn _chunk_from_strings(chunk_type: &str, data: &str) -> Result<Chunk> {
     let chunk_type = ChunkType::from_str(chunk_type)?;
     let data: Vec<u8> = data.bytes().collect();
 
