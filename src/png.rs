@@ -6,13 +6,17 @@ use anyhow::Error;
 use anyhow::Ok;
 use anyhow::Result;
 use std::fmt;
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::ops::Deref;
 use std::path::Path;
 use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct Png {
     header: [u8; 8],
-    chunks: Option<Vec<Chunk>>,
+    chunks: Vec<Chunk>,
 }
 
 #[allow(dead_code)]
@@ -25,31 +29,52 @@ impl Png {
     pub fn from_chunks(chunks: Vec<Chunk>) -> Self {
         Png {
             header: Png::STANDARD_HEADER,
-            chunks: Some(chunks),
+            chunks,
         }
     }
 
     /// Creates a `Png` from a file path
-    pub fn from_file<P: AsRef<Path>>(_path: P) -> Result<Self> {
-        todo!()
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut file_iter = reader.lines();
+        let chunk_type = file_iter.next().unwrap()?;
+        let data = file_iter.next().unwrap()?;
+        let chunks = vec![chunk_from_strings(&chunk_type, &data).unwrap()];
+        Ok(Png {
+            header: Png::STANDARD_HEADER,
+            chunks,
+        })
     }
 
     /// Appends a chunk to the end of this `Png` file's `Chunk` list.
     pub fn append_chunk(&mut self, chunk: Chunk) {
-        let chunks = self.chunks.as_mut().unwrap();
+        let chunks = &mut self.chunks;
         chunks.push(chunk);
     }
 
     /// Searches for a `Chunk` with the specified `chunk_type` and removes the first
     /// matching `Chunk` from this `Png` list of chunks.
-    pub fn remove_chunk(&mut self, chunk_type: &str) -> Result<Chunk> {
-        let chunk = self.chunk_by_type(chunk_type).unwrap();
-        self.chunks
-            .clone()
-            .unwrap()
-            .retain(|chunk| *chunk.chunk_type() != ChunkType::from_str(chunk_type).unwrap());
-        println!("chumk is {:?}", self.chunks);
-        Ok(chunk.to_owned())
+
+    pub fn remove_chunk(&mut self, chunk_type: &str) -> Result<()> {
+        let remove_chunk_type = ChunkType::from_str(chunk_type).unwrap();
+        // let remove_chunk = self
+        //     .chunks
+        //     .into_iter()
+        //     .find(|chunk| *chunk.chunk_type() != ChunkType::from_str(chunk_type).unwrap())
+        //     .unwrap();
+        // let left_chunks: Vec<Chunk> = self
+        //     .chunks
+        //     .into_iter()
+        //     .filter(|chunk| *chunk.chunk_type() != ChunkType::from_str(chunk_type).unwrap())
+        //     .collect();
+        // let remove_chunk_type = ChunkType::from_str(chunk_type).unwrap();
+        let _ = &self
+            .chunks
+            .retain(|chunk| *chunk.chunk_type() != remove_chunk_type);
+
+        // Ok(remove_chunk)
+        Ok(())
     }
 
     /// The header of this PNG.
@@ -59,15 +84,13 @@ impl Png {
 
     /// Lists the `Chunk`s stored in this `Png`
     pub fn chunks(&self) -> &[Chunk] {
-        self.chunks.as_deref().unwrap()
+        self.chunks.deref()
     }
 
     /// Searches for a `Chunk` with the specified `chunk_type` and returns the first
     /// matching `Chunk` from this `Png`.
     pub fn chunk_by_type(&self, chunk_type: &str) -> Option<&Chunk> {
         self.chunks
-            .as_ref()
-            .unwrap()
             .iter()
             .find(|chunk| *chunk.chunk_type() == ChunkType::from_str(chunk_type).unwrap())
     }
@@ -75,7 +98,16 @@ impl Png {
     /// Returns this `Png` as a byte sequence.
     /// These bytes will contain the header followed by the bytes of all of the chunks.
     pub fn as_bytes(&self) -> Vec<u8> {
-        todo!()
+        let chunk_bytes: Vec<u8> = self
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.as_bytes())
+            .collect();
+
+        self.header
+            .into_iter()
+            .chain(chunk_bytes)
+            .collect::<Vec<u8>>()
     }
 }
 
@@ -102,7 +134,7 @@ impl TryFrom<&[u8]> for Png {
 
             Ok(Png {
                 header,
-                chunks: Some(chunk_vec),
+                chunks: chunk_vec,
             })
         }
     }
@@ -115,6 +147,13 @@ fn get_chunk_by_range(bytes: &[u8], length: u32, start: usize) -> Result<Chunk> 
         .get(start + 4 + 4..start + 4 + 4 + length as usize)
         .unwrap()
         .to_vec();
+
+    Ok(Chunk::new(chunk_type, data))
+}
+
+fn chunk_from_strings(chunk_type: &str, data: &str) -> Result<Chunk> {
+    let chunk_type = ChunkType::from_str(chunk_type)?;
+    let data: Vec<u8> = data.bytes().collect();
 
     Ok(Chunk::new(chunk_type, data))
 }
@@ -291,9 +330,7 @@ mod tests {
     fn test_remove_chunk() {
         let mut png = testing_png();
         png.append_chunk(chunk_from_strings("TeSt", "Message").unwrap());
-        println!("add append: {:?}", png);
         png.remove_chunk("TeSt").unwrap();
-        println!("remove append: {:?}", png);
         let chunk = png.chunk_by_type("TeSt");
         assert!(chunk.is_none());
     }
